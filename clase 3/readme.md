@@ -15,4 +15,8 @@
 ## htlm 
 # java script 
 # CCS
-
+### cosas de programacion vistas
+# VARIABLES, 
+# TIPOS DE DATOS, 
+# VECTORES,
+#  MATRICES 
