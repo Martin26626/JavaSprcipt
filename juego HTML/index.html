@@ -1,0 +1,2605 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Mi Juego 3D</title>
+
+    <style>
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: Arial, sans-serif;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        /* ================================
+           INTERFAZ
+        ================================= */
+
+        #interfaz {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        #mensaje {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+
+            padding: 12px 16px;
+
+            color: white;
+            background: rgba(0, 0, 0, 0.65);
+
+            border-radius: 10px;
+
+            font-size: 14px;
+        }
+
+        #controles {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+
+            color: white;
+
+            background: rgba(0, 0, 0, 0.55);
+
+            padding: 12px;
+
+            border-radius: 10px;
+
+            line-height: 1.5;
+        }
+
+        #animacion {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+
+            color: white;
+
+            background: rgba(0, 0, 0, 0.55);
+
+            padding: 10px;
+
+            border-radius: 10px;
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+    <div id="interfaz">
+
+        <div id="mensaje">
+            Cargando juego...
+        </div>
+
+        <div id="animacion">
+            Animación: -
+        </div>
+
+        <div id="controles">
+
+            <b>CONTROLES</b><br>
+
+            W A S D → Mover<br>
+            SHIFT → Correr<br>
+            CTRL → Agacharse<br>
+            ESPACIO → Saltar<br>
+            CLIC IZQUIERDO → Golpear<br>
+            CLIC DERECHO + MOUSE → Cámara
+
+        </div>
+
+    </div>
+
+
+    <!-- =====================================================
+         IMPORTACIONES
+    ====================================================== -->
+
+    <script type="importmap">
+
+    {
+        "imports": {
+
+            "three":
+            "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+
+            "three/addons/":
+            "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+
+            "@dimforge/rapier3d-compat":
+            "https://cdn.skypack.dev/@dimforge/rapier3d-compat"
+
+        }
+    }
+
+    </script>
+
+
+    <script type="module">
+
+        /* =====================================================
+           IMPORTACIONES
+        ====================================================== */
+
+        import * as THREE from "three";
+
+        import {
+            GLTFLoader
+        } from "three/addons/loaders/GLTFLoader.js";
+
+        import * as SkeletonUtils
+        from "three/addons/utils/SkeletonUtils.js";
+
+        import RAPIER
+        from "@dimforge/rapier3d-compat";
+
+
+        /* =====================================================
+           VARIABLES PRINCIPALES
+        ====================================================== */
+
+        let escena;
+
+        let camara;
+
+        let renderizador;
+
+        let reloj;
+
+        let jugador;
+
+        let modeloJugador;
+
+        let mezcladorJugador;
+
+        let animacionesJugador = [];
+
+        let accionesJugador = {};
+
+        let accionActual = null;
+
+        let mundoFisico;
+
+
+        /* =====================================================
+           VARIABLES DEL JUGADOR
+        ====================================================== */
+
+        const estadoJugador = {
+
+            velocidadCaminar: 3,
+
+            velocidadCorrer: 7,
+
+            velocidadAgachado: 1.5,
+
+            velocidadVertical: 0,
+
+            enSuelo: true,
+
+            corriendo: false,
+
+            agachado: false,
+
+            golpeando: false
+
+        };
+
+
+        /* =====================================================
+           TECLADO
+        ====================================================== */
+
+        const teclas = {
+
+            w: false,
+            a: false,
+            s: false,
+            d: false,
+
+            shift: false,
+            control: false
+
+        };
+
+
+        /* =====================================================
+           CÁMARA
+        ====================================================== */
+
+        let anguloCamaraHorizontal = 0;
+
+        let anguloCamaraVertical = 0.25;
+
+        let distanciaCamara = 6;
+
+        let moviendoCamara = false;
+
+        let ultimaX = 0;
+
+        let ultimaY = 0;
+
+
+        /* =====================================================
+           NPC
+        ====================================================== */
+
+        const npcs = [];
+
+        let modeloBaseNPC = null;
+
+        let animacionesNPC = [];
+
+
+        /* =====================================================
+           INICIO
+        ====================================================== */
+
+        iniciarJuego();
+
+
+        async function iniciarJuego() {
+
+            /* -----------------------------------------------
+               RAPIER
+            ------------------------------------------------ */
+
+            try {
+
+                await RAPIER.init();
+
+                mundoFisico =
+                    new RAPIER.World({
+                        x: 0,
+                        y: -9.81,
+                        z: 0
+                    });
+
+            }
+            catch (error) {
+
+                console.error(
+                    "No se pudo iniciar Rapier:",
+                    error
+                );
+
+            }
+
+
+            /* -----------------------------------------------
+               ESCENA
+            ------------------------------------------------ */
+
+            crearEscena();
+
+
+            /* -----------------------------------------------
+               CÁMARA
+            ------------------------------------------------ */
+
+            crearCamara();
+
+
+            /* -----------------------------------------------
+               RENDERIZADOR
+            ------------------------------------------------ */
+
+            crearRenderizador();
+
+
+            /* -----------------------------------------------
+               LUCES
+            ------------------------------------------------ */
+
+            crearLuces();
+
+
+            /* -----------------------------------------------
+               MUNDO
+            ------------------------------------------------ */
+
+            crearCiudad();
+
+            crearBosque();
+
+            crearLago();
+
+
+            /* -----------------------------------------------
+               FÍSICA DEL SUELO
+            ------------------------------------------------ */
+
+            crearFisicaSuelo();
+
+
+            /* -----------------------------------------------
+               CARGAR JUGADOR
+            ------------------------------------------------ */
+
+            await cargarJugador();
+
+
+            /* -----------------------------------------------
+               CARGAR NPC
+            ------------------------------------------------ */
+
+            cargarNPC();
+
+
+            /* -----------------------------------------------
+               CONTROLES
+            ------------------------------------------------ */
+
+            configurarControles();
+
+
+            /* -----------------------------------------------
+               RELOJ
+            ------------------------------------------------ */
+
+            reloj =
+                new THREE.Clock();
+
+
+            document.getElementById(
+                "mensaje"
+            ).textContent =
+                "¡Juego iniciado!";
+
+
+            /* -----------------------------------------------
+               BUCLE PRINCIPAL
+            ------------------------------------------------ */
+
+            actualizarJuego();
+
+        }
+
+
+        /* =====================================================
+           CREAR ESCENA
+        ====================================================== */
+
+        function crearEscena() {
+
+            escena =
+                new THREE.Scene();
+
+            escena.background =
+                new THREE.Color(
+                    0x87ceeb
+                );
+
+            escena.fog =
+                new THREE.Fog(
+                    0x87ceeb,
+                    30,
+                    180
+                );
+
+        }
+
+
+        /* =====================================================
+           CREAR CÁMARA
+        ====================================================== */
+
+        function crearCamara() {
+
+            camara =
+                new THREE.PerspectiveCamera(
+
+                    60,
+
+                    window.innerWidth /
+                    window.innerHeight,
+
+                    0.1,
+
+                    1000
+
+                );
+
+        }
+
+
+        /* =====================================================
+           CREAR RENDERIZADOR
+        ====================================================== */
+
+        function crearRenderizador() {
+
+            renderizador =
+                new THREE.WebGLRenderer({
+
+                    antialias: true
+
+                });
+
+
+            renderizador.setSize(
+
+                window.innerWidth,
+
+                window.innerHeight
+
+            );
+
+
+            renderizador.setPixelRatio(
+
+                Math.min(
+                    window.devicePixelRatio,
+                    2
+                )
+
+            );
+
+
+            renderizador.shadowMap.enabled =
+                true;
+
+
+            renderizador.shadowMap.type =
+                THREE.PCFSoftShadowMap;
+
+
+            document.body.appendChild(
+                renderizador.domElement
+            );
+
+        }
+
+
+        /* =====================================================
+           LUCES
+        ====================================================== */
+
+        function crearLuces() {
+
+            const luzCielo =
+                new THREE.HemisphereLight(
+
+                    0xffffff,
+
+                    0x557755,
+
+                    2
+
+                );
+
+            escena.add(
+                luzCielo
+            );
+
+
+            const sol =
+                new THREE.DirectionalLight(
+
+                    0xffffff,
+
+                    3
+
+                );
+
+
+            sol.position.set(
+
+                50,
+                80,
+                30
+
+            );
+
+
+            sol.castShadow =
+                true;
+
+
+            sol.shadow.mapSize.width =
+                2048;
+
+            sol.shadow.mapSize.height =
+                2048;
+
+
+            escena.add(
+                sol
+            );
+
+        }
+
+
+        /* =====================================================
+           CIUDAD
+        ====================================================== */
+
+        function crearCiudad() {
+
+            /* -----------------------------------------------
+               SUELO
+            ------------------------------------------------ */
+
+            const suelo =
+                new THREE.Mesh(
+
+                    new THREE.PlaneGeometry(
+                        180,
+                        180
+                    ),
+
+                    new THREE.MeshStandardMaterial({
+
+                        color: 0x4d8a3b
+
+                    })
+
+                );
+
+
+            suelo.rotation.x =
+                -Math.PI / 2;
+
+
+            suelo.receiveShadow =
+                true;
+
+
+            escena.add(
+                suelo
+            );
+
+
+            /* -----------------------------------------------
+               CALLES
+            ------------------------------------------------ */
+
+            crearCalle(
+                0,
+                0,
+                180,
+                8,
+                true
+            );
+
+
+            crearCalle(
+                0,
+                0,
+                180,
+                8,
+                false
+            );
+
+
+            crearCalle(
+                -35,
+                0,
+                80,
+                7,
+                true
+            );
+
+
+            crearCalle(
+                35,
+                0,
+                80,
+                7,
+                true
+            );
+
+
+            /* -----------------------------------------------
+               EDIFICIOS
+            ------------------------------------------------ */
+
+            for (
+                let x = -65;
+                x <= 65;
+                x += 16
+            ) {
+
+                for (
+                    let z = -65;
+                    z <= 65;
+                    z += 16
+                ) {
+
+                    if (
+                        Math.abs(x) < 14 ||
+                        Math.abs(z) < 14
+                    ) {
+
+                        continue;
+
+                    }
+
+
+                    crearEdificio(
+                        x,
+                        z
+                    );
+
+                }
+
+            }
+
+        }
+
+
+        /* =====================================================
+           CREAR CALLE
+        ====================================================== */
+
+        function crearCalle(
+            x,
+            z,
+            longitud,
+            ancho,
+            horizontal
+        ) {
+
+            const calle =
+                new THREE.Mesh(
+
+                    new THREE.PlaneGeometry(
+
+                        horizontal
+                            ? longitud
+                            : ancho,
+
+                        horizontal
+                            ? ancho
+                            : longitud
+
+                    ),
+
+                    new THREE.MeshStandardMaterial({
+
+                        color: 0x333333
+
+                    })
+
+                );
+
+
+            calle.rotation.x =
+                -Math.PI / 2;
+
+
+            calle.position.set(
+                x,
+                0.02,
+                z
+            );
+
+
+            escena.add(
+                calle
+            );
+
+        }
+
+
+        /* =====================================================
+           EDIFICIOS
+        ====================================================== */
+
+        function crearEdificio(
+            x,
+            z
+        ) {
+
+            const ancho =
+                10 +
+                Math.random() * 4;
+
+
+            const alto =
+                6 +
+                Math.random() * 15;
+
+
+            const profundidad =
+                10 +
+                Math.random() * 4;
+
+
+            const edificio =
+                new THREE.Mesh(
+
+                    new THREE.BoxGeometry(
+
+                        ancho,
+                        alto,
+                        profundidad
+
+                    ),
+
+                    new THREE.MeshStandardMaterial({
+
+                        color:
+                            new THREE.Color(
+                                0.25 +
+                                Math.random() * 0.35,
+                                0.25 +
+                                Math.random() * 0.35,
+                                0.25 +
+                                Math.random() * 0.35
+                            )
+
+                    })
+
+                );
+
+
+            edificio.position.set(
+
+                x,
+
+                alto / 2,
+
+                z
+
+            );
+
+
+            edificio.castShadow =
+                true;
+
+
+            edificio.receiveShadow =
+                true;
+
+
+            escena.add(
+                edificio
+            );
+
+
+            /* -----------------------------------------------
+               VENTANAS
+            ------------------------------------------------ */
+
+            for (
+                let piso = 1;
+                piso < alto / 3;
+                piso++
+            ) {
+
+                for (
+                    let ventana = -2;
+                    ventana <= 2;
+                    ventana++
+                ) {
+
+                    const ventanaObjeto =
+                        new THREE.Mesh(
+
+                            new THREE.BoxGeometry(
+                                0.8,
+                                1.1,
+                                0.1
+                            ),
+
+                            new THREE.MeshStandardMaterial({
+
+                                color:
+                                    0x8ed8ff,
+
+                                emissive:
+                                    0x224466
+
+                            })
+
+                        );
+
+
+                    ventanaObjeto.position.set(
+
+                        x +
+                        ventana * 1.6,
+
+                        piso * 3,
+
+                        z -
+                        profundidad / 2 -
+                        0.06
+
+                    );
+
+
+                    escena.add(
+                        ventanaObjeto
+                    );
+
+                }
+
+            }
+
+        }
+
+
+        /* =====================================================
+           BOSQUE
+        ====================================================== */
+
+        function crearBosque() {
+
+            for (
+                let i = 0;
+                i < 180;
+                i++
+            ) {
+
+                const x =
+                    -80 +
+                    Math.random() * 160;
+
+
+                const z =
+                    -80 +
+                    Math.random() * 160;
+
+
+                /* No poner árboles
+                   en el centro de la ciudad */
+
+                if (
+                    Math.abs(x) < 48 &&
+                    Math.abs(z) < 48
+                ) {
+
+                    continue;
+
+                }
+
+
+                /* No poner árboles
+                   dentro del lago */
+
+                if (
+                    Math.abs(x - 55) < 22 &&
+                    Math.abs(z - 45) < 18
+                ) {
+
+                    continue;
+
+                }
+
+
+                crearArbol(
+                    x,
+                    z
+                );
+
+            }
+
+        }
+
+
+        /* =====================================================
+           ÁRBOL
+        ====================================================== */
+
+        function crearArbol(
+            x,
+            z
+        ) {
+
+            const arbol =
+                new THREE.Group();
+
+
+            const tronco =
+                new THREE.Mesh(
+
+                    new THREE.CylinderGeometry(
+                        0.45,
+                        0.6,
+                        4,
+                        8
+                    ),
+
+                    new THREE.MeshStandardMaterial({
+
+                        color: 0x6b3f20
+
+                    })
+
+                );
+
+
+            tronco.position.y =
+                2;
+
+
+            tronco.castShadow =
+                true;
+
+
+            arbol.add(
+                tronco
+            );
+
+
+            const copa =
+                new THREE.Mesh(
+
+                    new THREE.SphereGeometry(
+                        2.4,
+                        10,
+                        10
+                    ),
+
+                    new THREE.MeshStandardMaterial({
+
+                        color: 0x236b2c
+
+                    })
+
+                );
+
+
+            copa.position.y =
+                5;
+
+
+            copa.castShadow =
+                true;
+
+
+            arbol.add(
+                copa
+            );
+
+
+            arbol.position.set(
+                x,
+                0,
+                z
+            );
+
+
+            escena.add(
+                arbol
+            );
+
+        }
+
+
+        /* =====================================================
+           LAGO
+        ====================================================== */
+
+        function crearLago() {
+
+            const lago =
+                new THREE.Mesh(
+
+                    new THREE.CircleGeometry(
+                        22,
+                        64
+                    ),
+
+                    new THREE.MeshStandardMaterial({
+
+                        color: 0x1688c4,
+
+                        transparent: true,
+
+                        opacity: 0.85,
+
+                        roughness: 0.1,
+
+                        metalness: 0.1
+
+                    })
+
+                );
+
+
+            lago.rotation.x =
+                -Math.PI / 2;
+
+
+            lago.position.set(
+
+                55,
+
+                0.05,
+
+                45
+
+            );
+
+
+            escena.add(
+                lago
+            );
+
+
+            /* -----------------------------------------------
+               BORDE DEL LAGO
+            ------------------------------------------------ */
+
+            const borde =
+                new THREE.Mesh(
+
+                    new THREE.RingGeometry(
+                        22,
+                        24,
+                        64
+                    ),
+
+                    new THREE.MeshStandardMaterial({
+
+                        color: 0x3f8f45
+
+                    })
+
+                );
+
+
+            borde.rotation.x =
+                -Math.PI / 2;
+
+
+            borde.position.set(
+
+                55,
+
+                0.04,
+
+                45
+
+            );
+
+
+            escena.add(
+                borde
+            );
+
+        }
+
+
+        /* =====================================================
+           FÍSICA DEL SUELO
+        ====================================================== */
+
+        function crearFisicaSuelo() {
+
+            if (!mundoFisico) {
+
+                return;
+
+            }
+
+
+            const cuerpoSuelo =
+                RAPIER.RigidBodyDesc.fixed();
+
+
+            const rigidBody =
+                mundoFisico.createRigidBody(
+                    cuerpoSuelo
+                );
+
+
+            const colisionSuelo =
+                RAPIER.ColliderDesc.cuboid(
+                    90,
+                    0.1,
+                    90
+                );
+
+
+            mundoFisico.createCollider(
+
+                colisionSuelo,
+
+                rigidBody
+
+            );
+
+        }
+
+
+        /* =====================================================
+           CARGAR JUGADOR
+        ====================================================== */
+
+        async function cargarJugador() {
+
+            const cargador =
+                new GLTFLoader();
+
+
+            try {
+
+                const resultado =
+                    await cargador.loadAsync(
+
+                        "modelos/jugador.glb"
+
+                    );
+
+
+                modeloJugador =
+                    resultado.scene;
+
+
+                animacionesJugador =
+                    resultado.animations;
+
+
+                console.log(
+                    "Animaciones:",
+                    animacionesJugador
+                );
+
+
+                jugador =
+                    modeloJugador;
+
+
+                jugador.position.set(
+                    0,
+                    0,
+                    5
+                );
+
+
+                jugador.scale.set(
+                    1,
+                    1,
+                    1
+                );
+
+
+                jugador.traverse(
+                    function(objeto) {
+
+                        if (
+                            objeto.isMesh
+                        ) {
+
+                            objeto.castShadow =
+                                true;
+
+                            objeto.receiveShadow =
+                                true;
+
+                        }
+
+                    }
+                );
+
+
+                escena.add(
+                    jugador
+                );
+
+
+                /* -------------------------------------------
+                   ANIMACIONES
+                -------------------------------------------- */
+
+                if (
+                    animacionesJugador.length >
+                    0
+                ) {
+
+                    mezcladorJugador =
+                        new THREE.AnimationMixer(
+                            jugador
+                        );
+
+
+                    prepararAnimacionesJugador();
+
+
+                    reproducirAnimacion(
+                        "idle"
+                    );
+
+                }
+
+
+                document.getElementById(
+                    "mensaje"
+                ).textContent =
+                    "Jugador cargado correctamente";
+
+
+            }
+            catch (error) {
+
+                console.error(
+                    "ERROR AL CARGAR jugador.glb:",
+                    error
+                );
+
+
+                document.getElementById(
+                    "mensaje"
+                ).textContent =
+                    "ERROR: no se pudo cargar modelos/jugador.glb";
+
+            }
+
+        }
+
+
+        /* =====================================================
+           PREPARAR ANIMACIONES
+        ====================================================== */
+
+        function prepararAnimacionesJugador() {
+
+            for (
+                const clip
+                of animacionesJugador
+            ) {
+
+                const nombreOriginal =
+                    clip.name;
+
+
+                const nombre =
+                    nombreOriginal
+                        .toLowerCase();
+
+
+                let categoria =
+                    "idle";
+
+
+                if (
+                    nombre.includes("run") ||
+                    nombre.includes("sprint") ||
+                    nombre.includes("correr")
+                ) {
+
+                    categoria =
+                        "run";
+
+                }
+                else if (
+                    nombre.includes("walk") ||
+                    nombre.includes("caminar")
+                ) {
+
+                    categoria =
+                        "walk";
+
+                }
+                else if (
+                    nombre.includes("jump") ||
+                    nombre.includes("salto")
+                ) {
+
+                    categoria =
+                        "jump";
+
+                }
+                else if (
+                    nombre.includes("crouch") ||
+                    nombre.includes("agach")
+                ) {
+
+                    categoria =
+                        "crouch";
+
+                }
+                else if (
+                    nombre.includes("punch") ||
+                    nombre.includes("attack") ||
+                    nombre.includes("golpe")
+                ) {
+
+                    categoria =
+                        "punch";
+
+                }
+
+
+                if (
+                    !accionesJugador[categoria]
+                ) {
+
+                    accionesJugador[categoria] =
+                        mezcladorJugador.clipAction(
+                            clip
+                        );
+
+                }
+
+            }
+
+
+            console.log(
+                "Acciones detectadas:",
+                Object.keys(
+                    accionesJugador
+                )
+            );
+
+        }
+
+
+        /* =====================================================
+           REPRODUCIR ANIMACIÓN
+        ====================================================== */
+
+        function reproducirAnimacion(
+            nombre
+        ) {
+
+            if (
+                !mezcladorJugador
+            ) {
+
+                return;
+
+            }
+
+
+            const nuevaAccion =
+                accionesJugador[nombre];
+
+
+            if (
+                !nuevaAccion
+            ) {
+
+                return;
+
+            }
+
+
+            if (
+                accionActual ===
+                nuevaAccion
+            ) {
+
+                return;
+
+            }
+
+
+            if (
+                accionActual
+            ) {
+
+                accionActual.fadeOut(
+                    0.15
+                );
+
+            }
+
+
+            nuevaAccion
+                .reset()
+                .fadeIn(0.15)
+                .play();
+
+
+            accionActual =
+                nuevaAccion;
+
+
+            document.getElementById(
+                "animacion"
+            ).textContent =
+                "Animación: " +
+                nombre;
+
+        }
+
+
+        /* =====================================================
+           CARGAR NPC
+        ====================================================== */
+
+        async function cargarNPC() {
+
+            if (!modeloJugador) {
+
+                return;
+
+            }
+
+
+            modeloBaseNPC =
+                modeloJugador;
+
+
+            animacionesNPC =
+                animacionesJugador;
+
+
+            const posiciones = [
+
+                [-10, 0, -10],
+
+                [10, 0, -10],
+
+                [15, 0, 15],
+
+                [-15, 0, 15],
+
+                [25, 0, -20],
+
+                [-25, 0, -20]
+
+            ];
+
+
+            for (
+                const posicion
+                of posiciones
+            ) {
+
+                crearNPC(
+                    posicion[0],
+                    posicion[1],
+                    posicion[2]
+                );
+
+            }
+
+        }
+
+
+        /* =====================================================
+           CREAR NPC
+        ====================================================== */
+
+        function crearNPC(
+            x,
+            y,
+            z
+        ) {
+
+            const modelo =
+                SkeletonUtils.clone(
+                    modeloBaseNPC
+                );
+
+
+            const npc =
+                new THREE.Group();
+
+
+            npc.add(
+                modelo
+            );
+
+
+            npc.position.set(
+                x,
+                y,
+                z
+            );
+
+
+            const escala =
+                0.9 +
+                Math.random() * 0.2;
+
+
+            npc.scale.set(
+                escala,
+                escala,
+                escala
+            );
+
+
+            escena.add(
+                npc
+            );
+
+
+            modelo.traverse(
+                function(objeto) {
+
+                    if (
+                        objeto.isMesh
+                    ) {
+
+                        objeto.castShadow =
+                            true;
+
+                        objeto.receiveShadow =
+                            true;
+
+                    }
+
+                }
+            );
+
+
+            let mezclador =
+                null;
+
+
+            let acciones = {};
+
+
+            if (
+                animacionesNPC.length >
+                0
+            ) {
+
+                mezclador =
+                    new THREE.AnimationMixer(
+                        modelo
+                    );
+
+
+                for (
+                    const clip
+                    of animacionesNPC
+                ) {
+
+                    const nombre =
+                        clip.name
+                            .toLowerCase();
+
+
+                    let categoria =
+                        "idle";
+
+
+                    if (
+                        nombre.includes("walk") ||
+                        nombre.includes("caminar")
+                    ) {
+
+                        categoria =
+                            "walk";
+
+                    }
+                    else if (
+                        nombre.includes("run") ||
+                        nombre.includes("correr")
+                    ) {
+
+                        categoria =
+                            "run";
+
+                    }
+
+
+                    if (
+                        !acciones[categoria]
+                    ) {
+
+                        acciones[categoria] =
+                            mezclador.clipAction(
+                                clip
+                            );
+
+                    }
+
+                }
+
+
+                if (
+                    acciones.walk
+                ) {
+
+                    acciones.walk.play();
+
+                }
+                else if (
+                    acciones.idle
+                ) {
+
+                    acciones.idle.play();
+
+                }
+
+            }
+
+
+            const npcDatos = {
+
+                objeto: npc,
+
+                modelo: modelo,
+
+                mezclador: mezclador,
+
+                acciones: acciones,
+
+                direccion:
+                    Math.random() *
+                    Math.PI *
+                    2,
+
+                tiempoCambio: 0,
+
+                derribado: false,
+
+                velocidad:
+                    0.8 +
+                    Math.random() * 1.2
+
+            };
+
+
+            npcs.push(
+                npcDatos
+            );
+
+        }
+
+
+        /* =====================================================
+           CONTROLES
+        ====================================================== */
+
+        function configurarControles() {
+
+            window.addEventListener(
+                "keydown",
+                function(evento) {
+
+                    switch (
+                        evento.code
+                    ) {
+
+                        case "KeyW":
+                            teclas.w = true;
+                            break;
+
+                        case "KeyA":
+                            teclas.a = true;
+                            break;
+
+                        case "KeyS":
+                            teclas.s = true;
+                            break;
+
+                        case "KeyD":
+                            teclas.d = true;
+                            break;
+
+                        case "ShiftLeft":
+                        case "ShiftRight":
+                            teclas.shift = true;
+                            break;
+
+                        case "ControlLeft":
+                        case "ControlRight":
+                            teclas.control = true;
+                            break;
+
+                        case "Space":
+
+                            saltarJugador();
+
+                            break;
+
+                    }
+
+                }
+            );
+
+
+            window.addEventListener(
+                "keyup",
+                function(evento) {
+
+                    switch (
+                        evento.code
+                    ) {
+
+                        case "KeyW":
+                            teclas.w = false;
+                            break;
+
+                        case "KeyA":
+                            teclas.a = false;
+                            break;
+
+                        case "KeyS":
+                            teclas.s = false;
+                            break;
+
+                        case "KeyD":
+                            teclas.d = false;
+                            break;
+
+                        case "ShiftLeft":
+                        case "ShiftRight":
+                            teclas.shift = false;
+                            break;
+
+                        case "ControlLeft":
+                        case "ControlRight":
+                            teclas.control = false;
+                            break;
+
+                    }
+
+                }
+            );
+
+
+            window.addEventListener(
+                "mousedown",
+                function(evento) {
+
+                    if (
+                        evento.button === 0
+                    ) {
+
+                        golpearJugador();
+
+                    }
+
+
+                    if (
+                        evento.button === 2
+                    ) {
+
+                        moviendoCamara =
+                            true;
+
+                        ultimaX =
+                            evento.clientX;
+
+                        ultimaY =
+                            evento.clientY;
+
+                    }
+
+                }
+            );
+
+
+            window.addEventListener(
+                "mouseup",
+                function(evento) {
+
+                    if (
+                        evento.button === 2
+                    ) {
+
+                        moviendoCamara =
+                            false;
+
+                    }
+
+                }
+            );
+
+
+            window.addEventListener(
+                "mousemove",
+                function(evento) {
+
+                    if (
+                        !moviendoCamara
+                    ) {
+
+                        return;
+
+                    }
+
+
+                    const movimientoX =
+                        evento.clientX -
+                        ultimaX;
+
+
+                    const movimientoY =
+                        evento.clientY -
+                        ultimaY;
+
+
+                    ultimaX =
+                        evento.clientX;
+
+
+                    ultimaY =
+                        evento.clientY;
+
+
+                    anguloCamaraHorizontal
+                        -= movimientoX * 0.005;
+
+
+                    anguloCamaraVertical
+                        -= movimientoY * 0.005;
+
+
+                    anguloCamaraVertical =
+                        THREE.MathUtils.clamp(
+
+                            anguloCamaraVertical,
+
+                            -0.3,
+
+                            1.2
+
+                        );
+
+                }
+            );
+
+
+            window.addEventListener(
+                "contextmenu",
+                function(evento) {
+
+                    evento.preventDefault();
+
+                }
+            );
+
+
+            window.addEventListener(
+                "resize",
+                actualizarTamañoVentana
+            );
+
+        }
+
+
+        /* =====================================================
+           SALTAR
+        ====================================================== */
+
+        function saltarJugador() {
+
+            if (
+                !jugador ||
+                !estadoJugador.enSuelo
+            ) {
+
+                return;
+
+            }
+
+
+            estadoJugador.velocidadVertical =
+                7;
+
+
+            estadoJugador.enSuelo =
+                false;
+
+
+            reproducirAnimacion(
+                "jump"
+            );
+
+        }
+
+
+        /* =====================================================
+           GOLPEAR
+        ====================================================== */
+
+        function golpearJugador() {
+
+            if (
+                estadoJugador.golpeando
+            ) {
+
+                return;
+
+            }
+
+
+            estadoJugador.golpeando =
+                true;
+
+
+            reproducirAnimacion(
+                "punch"
+            );
+
+
+            /* -------------------------------------------
+               COMPROBAR NPC CERCANOS
+            -------------------------------------------- */
+
+            if (
+                jugador
+            ) {
+
+                for (
+                    const npc
+                    of npcs
+                ) {
+
+                    if (
+                        npc.derribado
+                    ) {
+
+                        continue;
+
+                    }
+
+
+                    const distancia =
+                        jugador.position.distanceTo(
+                            npc.objeto.position
+                        );
+
+
+                    if (
+                        distancia < 2.5
+                    ) {
+
+                        derribarNPC(
+                            npc
+                        );
+
+                    }
+
+                }
+
+            }
+
+
+            setTimeout(
+                function() {
+
+                    estadoJugador.golpeando =
+                        false;
+
+                },
+                500
+            );
+
+        }
+
+
+        /* =====================================================
+           DERRIBAR NPC
+        ====================================================== */
+
+        function derribarNPC(
+            npc
+        ) {
+
+            npc.derribado =
+                true;
+
+
+            if (
+                npc.mezclador
+            ) {
+
+                npc.mezclador.stopAllAction();
+
+            }
+
+
+            /* -------------------------------------------
+               CAÍDA SIMPLE
+               -------------------------------------------- */
+
+            npc.objeto.rotation.x =
+                -Math.PI / 2;
+
+
+            setTimeout(
+                function() {
+
+                    if (
+                        npc.objeto
+                    ) {
+
+                        npc.objeto.rotation.x =
+                            0;
+
+                    }
+
+
+                    npc.derribado =
+                        false;
+
+
+                    if (
+                        npc.acciones.walk
+                    ) {
+
+                        npc.acciones.walk
+                            .reset()
+                            .play();
+
+                    }
+
+                },
+                1800
+            );
+
+        }
+
+
+        /* =====================================================
+           ACTUALIZAR JUGADOR
+        ====================================================== */
+
+        function actualizarJugador(
+            delta
+        ) {
+
+            if (
+                !jugador
+            ) {
+
+                return;
+
+            }
+
+
+            /* -------------------------------------------
+               DIRECCIÓN
+            -------------------------------------------- */
+
+            const direccion =
+                new THREE.Vector3();
+
+
+            if (
+                teclas.w
+            ) {
+
+                direccion.z -= 1;
+
+            }
+
+
+            if (
+                teclas.s
+            ) {
+
+                direccion.z += 1;
+
+            }
+
+
+            if (
+                teclas.a
+            ) {
+
+                direccion.x -= 1;
+
+            }
+
+
+            if (
+                teclas.d
+            ) {
+
+                direccion.x += 1;
+
+            }
+
+
+            if (
+                direccion.lengthSq() >
+                0
+            ) {
+
+                direccion.normalize();
+
+
+                /* ---------------------------------------
+                   ROTACIÓN SEGÚN CÁMARA
+                ---------------------------------------- */
+
+                const rotacionCamara =
+                    anguloCamaraHorizontal;
+
+
+                direccion.applyAxisAngle(
+
+                    new THREE.Vector3(
+                        0,
+                        1,
+                        0
+                    ),
+
+                    rotacionCamara
+
+                );
+
+
+                /* ---------------------------------------
+                   VELOCIDAD
+                ---------------------------------------- */
+
+                let velocidad =
+                    estadoJugador.velocidadCaminar;
+
+
+                estadoJugador.corriendo =
+                    teclas.shift &&
+                    !teclas.control;
+
+
+                estadoJugador.agachado =
+                    teclas.control;
+
+
+                if (
+                    estadoJugador.agachado
+                ) {
+
+                    velocidad =
+                        estadoJugador.velocidadAgachado;
+
+                }
+                else if (
+                    estadoJugador.corriendo
+                ) {
+
+                    velocidad =
+                        estadoJugador.velocidadCorrer;
+
+                }
+
+
+                jugador.position.addScaledVector(
+
+                    direccion,
+
+                    velocidad * delta
+
+                );
+
+
+                /* ---------------------------------------
+                   MIRAR HACIA EL MOVIMIENTO
+                ---------------------------------------- */
+
+                const angulo =
+                    Math.atan2(
+                        direccion.x,
+                        direccion.z
+                    );
+
+
+                jugador.rotation.y =
+                    THREE.MathUtils.lerp(
+
+                        jugador.rotation.y,
+
+                        angulo,
+
+                        0.18
+
+                    );
+
+
+                /* ---------------------------------------
+                   ANIMACIONES
+                ---------------------------------------- */
+
+                if (
+                    !estadoJugador.golpeando &&
+                    estadoJugador.enSuelo
+                ) {
+
+                    if (
+                        estadoJugador.agachado
+                    ) {
+
+                        reproducirAnimacion(
+                            "crouch"
+                        );
+
+                    }
+                    else if (
+                        estadoJugador.corriendo
+                    ) {
+
+                        reproducirAnimacion(
+                            "run"
+                        );
+
+                    }
+                    else {
+
+                        reproducirAnimacion(
+                            "walk"
+                        );
+
+                    }
+
+                }
+
+            }
+            else {
+
+                estadoJugador.corriendo =
+                    false;
+
+
+                if (
+                    !estadoJugador.golpeando &&
+                    estadoJugador.enSuelo
+                ) {
+
+                    if (
+                        estadoJugador.agachado
+                    ) {
+
+                        reproducirAnimacion(
+                            "crouch"
+                        );
+
+                    }
+                    else {
+
+                        reproducirAnimacion(
+                            "idle"
+                        );
+
+                    }
+
+                }
+
+            }
+
+
+            /* -------------------------------------------
+               GRAVEDAD
+            -------------------------------------------- */
+
+            estadoJugador.velocidadVertical
+                -= 18 * delta;
+
+
+            jugador.position.y
+                +=
+                estadoJugador.velocidadVertical *
+                delta;
+
+
+            /* -------------------------------------------
+               SUELO
+            -------------------------------------------- */
+
+            if (
+                jugador.position.y <= 0
+            ) {
+
+                jugador.position.y =
+                    0;
+
+
+                estadoJugador.velocidadVertical =
+                    0;
+
+
+                estadoJugador.enSuelo =
+                    true;
+
+            }
+
+        }
+
+
+        /* =====================================================
+           ACTUALIZAR NPC
+        ====================================================== */
+
+        function actualizarNPC(
+            delta
+        ) {
+
+            for (
+                const npc
+                of npcs
+            ) {
+
+                if (
+                    npc.derribado
+                ) {
+
+                    continue;
+
+                }
+
+
+                npc.tiempoCambio -=
+                    delta;
+
+
+                if (
+                    npc.tiempoCambio <= 0
+                ) {
+
+                    npc.direccion =
+                        Math.random() *
+                        Math.PI *
+                        2;
+
+
+                    npc.tiempoCambio =
+                        2 +
+                        Math.random() *
+                        4;
+
+                }
+
+
+                const direccion =
+                    new THREE.Vector3(
+
+                        Math.sin(
+                            npc.direccion
+                        ),
+
+                        0,
+
+                        Math.cos(
+                            npc.direccion
+                        )
+
+                    );
+
+
+                npc.objeto.position
+                    .addScaledVector(
+
+                        direccion,
+
+                        npc.velocidad *
+                        delta
+
+                    );
+
+
+                npc.objeto.rotation.y =
+                    npc.direccion;
+
+
+                /* ---------------------------------------
+                   LIMITES
+                ---------------------------------------- */
+
+                npc.objeto.position.x =
+                    THREE.MathUtils.clamp(
+
+                        npc.objeto.position.x,
+
+                        -80,
+
+                        80
+
+                    );
+
+
+                npc.objeto.position.z =
+                    THREE.MathUtils.clamp(
+
+                        npc.objeto.position.z,
+
+                        -80,
+
+                        80
+
+                    );
+
+
+                if (
+                    npc.mezclador
+                ) {
+
+                    npc.mezclador.update(
+                        delta
+                    );
+
+                }
+
+            }
+
+        }
+
+
+        /* =====================================================
+           ACTUALIZAR CÁMARA
+        ====================================================== */
+
+        function actualizarCamara() {
+
+            if (
+                !jugador
+            ) {
+
+                return;
+
+            }
+
+
+            const objetivo =
+                jugador.position.clone();
+
+
+            objetivo.y += 1.4;
+
+
+            const posicion =
+                new THREE.Vector3();
+
+
+            posicion.x =
+                Math.sin(
+                    anguloCamaraHorizontal
+                ) *
+                Math.cos(
+                    anguloCamaraVertical
+                ) *
+                distanciaCamara;
+
+
+            posicion.y =
+                Math.sin(
+                    anguloCamaraVertical
+                ) *
+                distanciaCamara;
+
+
+            posicion.z =
+                Math.cos(
+                    anguloCamaraHorizontal
+                ) *
+                Math.cos(
+                    anguloCamaraVertical
+                ) *
+                distanciaCamara;
+
+
+            posicion.add(
+                objetivo
+            );
+
+
+            camara.position.lerp(
+
+                posicion,
+
+                0.12
+
+            );
+
+
+            camara.lookAt(
+                objetivo
+            );
+
+        }
+
+
+        /* =====================================================
+           ACTUALIZAR TAMAÑO
+        ====================================================== */
+
+        function actualizarTamañoVentana() {
+
+            camara.aspect =
+                window.innerWidth /
+                window.innerHeight;
+
+
+            camara.updateProjectionMatrix();
+
+
+            renderizador.setSize(
+
+                window.innerWidth,
+
+                window.innerHeight
+
+            );
+
+        }
+
+
+        /* =====================================================
+           BUCLE PRINCIPAL
+        ====================================================== */
+
+        function actualizarJuego() {
+
+            requestAnimationFrame(
+                actualizarJuego
+            );
+
+
+            const delta =
+                Math.min(
+
+                    reloj.getDelta(),
+
+                    0.05
+
+                );
+
+
+            actualizarJugador(
+                delta
+            );
+
+
+            actualizarNPC(
+                delta
+            );
+
+
+            if (
+                mezcladorJugador
+            ) {
+
+                mezcladorJugador.update(
+                    delta
+                );
+
+            }
+
+
+            if (
+                mundoFisico
+            ) {
+
+                mundoFisico.step();
+
+            }
+
+
+            actualizarCamara();
+
+
+            renderizador.render(
+
+                escena,
+
+                camara
+
+            );
+
+        }
+
+    </script>
+
+</body>
+
+</html>
